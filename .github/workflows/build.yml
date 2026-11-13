@@ -50,11 +50,11 @@ jobs:
           # ==========================================
           # 1. 目标机型锁定：Banana Pi BPI-R4 Pro
           # ==========================================
-         CONFIG_TARGET_mediatek=y
-         CONFIG_TARGET_mediatek_filogic=y
-         CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-4e=y
-         CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-8x=y
-         CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro=y
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-8x=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-4e=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro=y
 
           # ==========================================
           # 2. 分区扩容（适配板载 8GB eMMC，分配 2GB 根目录空间）
