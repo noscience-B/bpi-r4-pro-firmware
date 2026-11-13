@@ -40,12 +40,15 @@ jobs:
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
-      - name: 5. Generate & Lock Verified Configuration (.config)
+      - name: 5. Pre-clean Recursive Dependencies & Generate Configuration
         run: |
           cd openwrt
+          # 预先清理可能导致冲突的重复 mihomo 核心定义，避免 Kconfig 递归报错
+          rm -rf feeds/nikki/mihomo-alpha feeds/nikki/mihomo-meta 2>/dev/null || true
+
           cat << 'EOF' > .config
           # ==========================================
-          # 1. 目标机型锁定：Banana Pi BPI-R4 Pro (单机型内置模式)
+          # 1. 目标机型锁定：Banana Pi BPI-R4 Pro
           # ==========================================
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
@@ -133,11 +136,6 @@ jobs:
           CONFIG_PACKAGE_f2fs-tools=y
           EOF
           make defconfig
-          # 打印最终锁定的机型与核心插件状态到日志中，方便核验
-          grep "CONFIG_TARGET_mediatek_filogic_DEVICE_" .config | grep "=y"
-          grep "CONFIG_PACKAGE_luci-app-nikki" .config
-          grep "CONFIG_PACKAGE_luci-app-store" .config
-          grep "CONFIG_PACKAGE_luci-app-uugamebooster" .config
 
       - name: 6. Download Package Sources
         run: |
