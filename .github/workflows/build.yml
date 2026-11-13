@@ -36,19 +36,19 @@ jobs:
       - name: 4. Update & Install Feeds
         run: |
           cd openwrt
+          # 预先摘除上游几个无关包的 Kconfig 递归 bug，防止干扰
           ./scripts/feeds update -a
+          rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
+          find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo-alpha" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
-      - name: 5. Pre-clean Recursive Dependencies & Generate Configuration
+      - name: 5. Generate Configuration
         run: |
           cd openwrt
-          # 预先清理可能导致冲突的重复 mihomo 核心定义，避免 Kconfig 递归报错
-          rm -rf feeds/nikki/mihomo-alpha feeds/nikki/mihomo-meta 2>/dev/null || true
-
           cat << 'EOF' > .config
           # ==========================================
-          # 1. 目标机型锁定：Banana Pi BPI-R4 Pro
+          # 1. 目标机型锁定：Banana Pi BPI-R4 Pro (含 8x 与 4e)
           # ==========================================
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
@@ -63,7 +63,7 @@ jobs:
           CONFIG_TARGET_ROOTFS_PARTSIZE=2048
 
           # ==========================================
-          # 3. 解决 dnsmasq 冲突 & 确保 Wi-Fi 7 驱动满血内置
+          # 3. 解决 dnsmasq 冲突 & 确保 Wi-Fi 7 (BE14000) 驱动满血内置
           # ==========================================
           # CONFIG_PACKAGE_dnsmasq is not set
           CONFIG_PACKAGE_dnsmasq-full=y
@@ -73,9 +73,11 @@ jobs:
           CONFIG_PACKAGE_mt7992-firmware=y
 
           # ==========================================
-          # 4. 核心套件：Nikki (Mihomo/Clash) + iStore商店 + 网易UU加速器
+          # 4. 核心套件：Nikki (含 Mihomo 核心) + iStore商店 + 网易UU加速器
           # ==========================================
           CONFIG_PACKAGE_nikki=y
+          CONFIG_PACKAGE_mihomo=y
+          CONFIG_PACKAGE_mihomo-meta=y
           CONFIG_PACKAGE_luci-app-nikki=y
           CONFIG_PACKAGE_luci-i18n-nikki-zh-cn=y
           CONFIG_PACKAGE_luci-app-store=y
@@ -137,6 +139,10 @@ jobs:
           CONFIG_PACKAGE_f2fs-tools=y
           EOF
           make defconfig
+
+          # 关键核验：在编译开始前就检查 mihomo 是否成功选中！如果没选中当场报错，绝不白等2小时！
+          echo "=== 核验关键包选中状态 ==="
+          grep -E "CONFIG_PACKAGE_(nikki|mihomo)" .config
 
       - name: 6. Download Package Sources
         run: |
