@@ -44,15 +44,14 @@ jobs:
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
           find feeds/nikki/ -name "Makefile" -exec sed -i 's/!PACKAGE_mihomo-alpha//g' {} + 2>/dev/null || true
           
-          # 2. 【精准狙击】移除因上游 firewall4 (2026.11.08) 更新导致 Hunk #1 失败的过时补丁
+          # 2. 【精准狙击】移除因上游 firewall4 更新导致 Hunk #1 失败的过时补丁
           rm -f package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
           sed -i '/fullconenat/d' package/network/config/firewall4/Makefile 2>/dev/null || true
           
-          # 3. 【体积解封与修复 sdcard 镜像打包冲突】
+          # 3. 【外科手术级体积解封】仅扩容 IMAGE_SIZE 并恢复被误伤的 @44m 分区偏移，彻底根治 ptgen 报错！
           sed -i 's/44m/128m/gI' target/linux/mediatek/image/filogic.mk
+          sed -i 's/@128m/@44m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
-          # 彻底规避 ptgen 对 sdcard.img 固定 64M 偏移的硬编码校验报错
-          sed -i '/device\/bananapi_bpi-r4-pro/,/^$/{ /sdcard.img/d }' target/linux/mediatek/image/filogic.mk 2>/dev/null || true
           
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
@@ -69,7 +68,7 @@ jobs:
           CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-8x=y
 
           # ==========================================
-          # 2. 分区扩容（适配板载 8GB eMMC，分配 1GB 根目录空间）
+          # 2. 分区扩容（适配板载 8GB eMMC，分配 1GB 根目录 + 剩余 6GB 留给 /opt F2FS）
           # ==========================================
           CONFIG_TARGET_KERNEL_PARTSIZE=64
           CONFIG_TARGET_ROOTFS_PARTSIZE=1024
@@ -167,11 +166,12 @@ jobs:
             openwrt/staging_dir/target-*/stamp
             openwrt/build_dir/host*
             openwrt/build_dir/toolchain*
-          key: ${{ runner.os }}-r4pro8x-tc-v1-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
+          key: ${{ runner.os }}-r4pro8x-tc-v2-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
           restore-keys: |
+            ${{ runner.os }}-r4pro8x-tc-v2-
             ${{ runner.os }}-r4pro8x-tc-v1-
 
-      - name: 7. Refresh Cache Timestamps (防止 git clone 时间戳倒挂触发重编)
+      - name: 7. Refresh Cache Timestamps (对齐 host/toolchain/target 全部印章时间戳)
         if: steps.cache-toolchain.outputs.cache-hit != ''
         run: |
           cd openwrt
@@ -185,7 +185,7 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: 9. Build & Save Toolchain (仅首次未命中缓存时执行并立刻锁入云端)
+      - name: 9. Build & Save Toolchain (支持 v1 缓存平滑升级至 v2)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
           cd openwrt
@@ -202,7 +202,7 @@ jobs:
             openwrt/staging_dir/target-*/stamp
             openwrt/build_dir/host*
             openwrt/build_dir/toolchain*
-          key: ${{ runner.os }}-r4pro8x-tc-v1-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
+          key: ${{ runner.os }}-r4pro8x-tc-v2-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
 
       - name: 11. Compile Target & Packages (三级阶梯防中断编译)
         run: |
