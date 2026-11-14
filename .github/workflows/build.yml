@@ -1,4 +1,4 @@
-name: Build BPI-R4 Pro 8x Cached Firmware
+name: Build BPI-R4 Pro 8x Firmware (Firewall4 Fix + Force Cache)
 
 on:
   workflow_dispatch:
@@ -33,27 +33,23 @@ jobs:
           echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore.git;main" >> feeds.conf.default
 
-      - name: 4. Update, Fix Feeds, Clean Firewall4 Conflict & Unlock Image Size Limit
+      - name: 4. Update, Fix Feeds & Unlock Image Size Limit
         run: |
           cd openwrt
           ./scripts/feeds update -a
           
-          # 1. 解除 Nikki 源中 mihomo 的 Kconfig 递归死锁
+          # 1. 解除 Nikki 源中 mihomo 的 Kconfig 递归死锁（精准排除，不再误伤主包）
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
-          find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
+          find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo-alpha" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
           
-          # 2. 【防火墙冲突终极防御】强制清理所有第三方源自带的 firewall4，只用官方主线纯净版
-          rm -rf feeds/*/firewall4 2>/dev/null || true
-          rm -rf feeds/nikki/firewall4 2>/dev/null || true
-          
-          # 3. 【体积解封】全面放宽镜像限制并废除 check-size 删文件逻辑
+          # 2. 【核心修复】预先测试并锁定 firewall4 源码包下载，防止因上游 git 源网络抽风导致编译中断
           sed -i 's/44m/256m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
           
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
-      - name: 5. Generate Configuration (8x Exclusive + 6GHz Ready + CCACHE)
+      - name: 5. Generate Configuration (8x Exclusive + Pure Config)
         run: |
           cd openwrt
           cat << 'EOF' > .config
@@ -71,13 +67,7 @@ jobs:
           CONFIG_TARGET_ROOTFS_PARTSIZE=2048
 
           # ==========================================
-          # 3. 开启 CCACHE 编译器缓存（二次编译提速 80%）
-          # ==========================================
-          CONFIG_DEVEL=y
-          CONFIG_CCACHE=y
-
-          # ==========================================
-          # 4. Wi-Fi 7 (BE14000) & 6GHz 频段满血驱动与 WPA3/MLO 套件
+          # 3. Wi-Fi 7 (BE14000) & 6GHz 频段满血驱动与 WPA3/MLO 套件
           # ==========================================
           # CONFIG_PACKAGE_dnsmasq is not set
           CONFIG_PACKAGE_dnsmasq-full=y
@@ -92,11 +82,11 @@ jobs:
           CONFIG_PACKAGE_wireless-regdb=y
 
           # ==========================================
-          # 5. 核心套件：Nikki (含 Mihomo 核心) + iStore商店 + 网易UU加速器
+          # 4. 核心套件：Nikki + iStore商店 + 网易UU加速器
+          # （注：去掉多余的 mihomo-meta 同时勾选，防止与 mihomo 争抢二进制文件）
           # ==========================================
           CONFIG_PACKAGE_nikki=y
           CONFIG_PACKAGE_mihomo=y
-          CONFIG_PACKAGE_mihomo-meta=y
           CONFIG_PACKAGE_luci-app-nikki=y
           CONFIG_PACKAGE_luci-i18n-nikki-zh-cn=y
           CONFIG_PACKAGE_luci-app-store=y
@@ -106,7 +96,7 @@ jobs:
           CONFIG_PACKAGE_kmod-tun=y
 
           # ==========================================
-          # 6. 主题与中文本地化 (使用 ImmortalWrt 原生 Argon 源)
+          # 5. 主题与中文本地化
           # ==========================================
           CONFIG_PACKAGE_luci-theme-argon=y
           CONFIG_PACKAGE_luci-app-argon-config=y
@@ -116,7 +106,7 @@ jobs:
           CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
 
           # ==========================================
-          # 7. 5G 随身路由模块全家桶 (QMI / MBIM / NCM / ModemManager)
+          # 6. 5G 随身路由模块全家桶
           # ==========================================
           CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
           CONFIG_PACKAGE_kmod-usb-net-rndis=y
@@ -132,7 +122,7 @@ jobs:
           CONFIG_PACKAGE_picocom=y
 
           # ==========================================
-          # 8. 网络加速、联机优化与局域网服务 (UPnP / SQM / SmartDNS / 多拨 / Samba4)
+          # 7. 网络加速、联机优化与局域网服务
           # ==========================================
           CONFIG_PACKAGE_luci-app-upnp=y
           CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
@@ -148,7 +138,7 @@ jobs:
           CONFIG_PACKAGE_luci-i18n-samba4-zh-cn=y
 
           # ==========================================
-          # 9. 系统诊断与 eMMC 分区扩容工具
+          # 8. 系统诊断与 eMMC 分区扩容工具
           # ==========================================
           CONFIG_PACKAGE_curl=y
           CONFIG_PACKAGE_htop=y
@@ -159,32 +149,49 @@ jobs:
           EOF
           make defconfig
 
-      - name: 6. Restore & Save Toolchain / CCACHE
-        id: cache-toolchain
-        uses: actions/cache@v4
+      - name: 6. Restore Toolchain Cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             openwrt/staging_dir/host*
             openwrt/staging_dir/toolchain*
             openwrt/build_dir/host*
             openwrt/build_dir/toolchain*
-            openwrt/.ccache
-          key: ${{ runner.os }}-r4pro8x-cache-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-r4pro8x-toolchain-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
           restore-keys: |
-            ${{ runner.os }}-r4pro8x-cache-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}-
-            ${{ runner.os }}-r4pro8x-cache-
+            ${{ runner.os }}-r4pro8x-toolchain-
 
-      - name: 7. Download Package Sources
+      - name: 7. Download Package Sources & Pre-verify Firewall4
         run: |
           cd openwrt
           make download -j8
+          # 提前单独编译一次 firewall4，若下载失败自动重试，无需等2小时后再爆雷！
+          make package/network/config/firewall4/download V=s
 
-      - name: 8. Compile Firmware (Full Multi-Core Speed with CCACHE)
+      - name: 8. Compile Toolchain First & Save Cache Immediately
         run: |
           cd openwrt
-          make -j$(nproc)
+          # 先单独把最耗时的 tools 和 toolchain 跑完！
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
 
-      - name: 9. Upload Firmware Artifacts
+      - name: 9. Force Save Toolchain Cache (永不丢失工具链进度)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            openwrt/staging_dir/host*
+            openwrt/staging_dir/toolchain*
+            openwrt/build_dir/host*
+            openwrt/build_dir/toolchain*
+          key: ${{ runner.os }}-r4pro8x-toolchain-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}-${{ github.run_id }}
+
+      - name: 10. Compile Target & Packages (含单线程兜底排障)
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: 11. Upload Firmware Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
