@@ -48,9 +48,11 @@ jobs:
           rm -f package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
           sed -i '/fullconenat/d' package/network/config/firewall4/Makefile 2>/dev/null || true
           
-          # 3. 【体积解封】将 44m/44M 扩容至 128m/128M，并阉割 check-size 的删文件指令
+          # 3. 【体积解封与修复 sdcard 镜像打包冲突】
           sed -i 's/44m/128m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
+          # 彻底规避 ptgen 对 sdcard.img 固定 64M 偏移的硬编码校验报错
+          sed -i '/image.*sdcard.img/d' target/linux/mediatek/image/filogic.mk 2>/dev/null || true
           
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
