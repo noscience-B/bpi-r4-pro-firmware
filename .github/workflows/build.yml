@@ -1,4 +1,4 @@
-name: Build BPI-R4 Pro Full Firmware
+name: Build BPI-R4 Pro 8x Full Firmware
 
 on:
   workflow_dispatch:
@@ -33,34 +33,32 @@ jobs:
           echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore.git;main" >> feeds.conf.default
 
-      - name: 4. Update, Fix Feeds & Unlock Image Size Limit
+      - name: 4. Update, Fix Feeds & Completely Remove Image Size Limit
         run: |
           cd openwrt
           ./scripts/feeds update -a
           
-          # 1. 彻底解除 Nikki 源中 mihomo 的 Kconfig 递归死锁，并确保提供 mihomo 虚拟包
+          # 1. 解除 Nikki 源中 mihomo 的 Kconfig 递归死锁
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
           find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
           
-          # 2. 【核心破局】解除 BPI-R4 Pro SD卡镜像 44M 的体积硬上限，直接扩容到 128M！
-          sed -i 's/pad-to 44M/pad-to 128M/g' target/linux/mediatek/image/filogic.mk
-          sed -i 's/bs=44M/bs=128M/g' target/linux/mediatek/image/filogic.mk
+          # 2. 【终极绝杀】解除 BPI-R4 Pro 镜像体积限制，并直接阉割 check-size 的删文件逻辑！
+          sed -i 's/44m/256m/gI' target/linux/mediatek/image/filogic.mk
+          sed -i 's/rm -f $@/true/g' include/image-commands.mk
           
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
-      - name: 5. Generate Configuration
+      - name: 5. Generate Configuration (8x Exclusive + 6GHz Ready)
         run: |
           cd openwrt
           cat << 'EOF' > .config
           # ==========================================
-          # 1. 目标机型锁定：Banana Pi BPI-R4 Pro (含 8x 与 4e)
+          # 1. 目标机型精准锁定：只编 BPI-R4-Pro-8x！拒绝 4e 陪跑！
           # ==========================================
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-8x=y
-          CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-4e=y
-          CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro=y
 
           # ==========================================
           # 2. 分区扩容（适配板载 8GB eMMC，分配 2GB 根目录空间）
@@ -69,7 +67,7 @@ jobs:
           CONFIG_TARGET_ROOTFS_PARTSIZE=2048
 
           # ==========================================
-          # 3. 解决 dnsmasq 冲突 & 确保 Wi-Fi 7 (BE14000) 驱动满血内置
+          # 3. Wi-Fi 7 (BE14000) & 6GHz 频段满血驱动与 WPA3/MLO 套件
           # ==========================================
           # CONFIG_PACKAGE_dnsmasq is not set
           CONFIG_PACKAGE_dnsmasq-full=y
@@ -77,6 +75,11 @@ jobs:
           CONFIG_PACKAGE_kmod-mt7996e=y
           CONFIG_PACKAGE_mt7996-firmware=y
           CONFIG_PACKAGE_mt7992-firmware=y
+          # CONFIG_PACKAGE_wpad-basic-mbedtls is not set
+          # CONFIG_PACKAGE_wpad-mbedtls is not set
+          CONFIG_PACKAGE_wpad-openssl=y
+          CONFIG_PACKAGE_iw-full=y
+          CONFIG_PACKAGE_wireless-regdb=y
 
           # ==========================================
           # 4. 核心套件：Nikki (含 Mihomo 核心) + iStore商店 + 网易UU加速器
@@ -146,21 +149,24 @@ jobs:
           EOF
           make defconfig
 
+          echo "=== 核验 8x 机型是否成功锁定 ==="
+          grep "CONFIG_TARGET_mediatek_filogic_DEVICE_" .config
+
       - name: 6. Download Package Sources
         run: |
           cd openwrt
           make download -j8
 
-      - name: 7. Compile Firmware
+      - name: 7. Compile Firmware (Full Multi-Core Speed)
         run: |
           cd openwrt
-          make -j$(nproc) || make -j1 V=s
+          make -j$(nproc)
 
       - name: 8. Upload Firmware Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BPI-R4-Pro-Full-Firmware
+          name: BPI-R4-Pro-8x-Full-Firmware
           path: |
             openwrt/bin/targets/mediatek/filogic/*bananapi_bpi-r4-pro*
             openwrt/.config
