@@ -52,7 +52,7 @@ jobs:
           sed -i 's/44m/128m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
           # 彻底规避 ptgen 对 sdcard.img 固定 64M 偏移的硬编码校验报错
-          sed -i '/image.*sdcard.img/d' target/linux/mediatek/image/filogic.mk 2>/dev/null || true
+          sed -i '/device\/bananapi_bpi-r4-pro/,/^$/{ /sdcard.img/d }' target/linux/mediatek/image/filogic.mk 2>/dev/null || true
           
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
@@ -69,7 +69,7 @@ jobs:
           CONFIG_TARGET_mediatek_filogic_DEVICE_bananapi_bpi-r4-pro-8x=y
 
           # ==========================================
-          # 2. 分区扩容（适配板载 8GB eMMC，分配 2GB 根目录空间）
+          # 2. 分区扩容（适配板载 8GB eMMC，分配 1GB 根目录空间）
           # ==========================================
           CONFIG_TARGET_KERNEL_PARTSIZE=64
           CONFIG_TARGET_ROOTFS_PARTSIZE=1024
