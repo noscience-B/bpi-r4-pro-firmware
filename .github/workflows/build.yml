@@ -70,7 +70,7 @@ jobs:
           # 2. 分区扩容（适配板载 8GB eMMC，分配 2GB 根目录空间）
           # ==========================================
           CONFIG_TARGET_KERNEL_PARTSIZE=64
-          CONFIG_TARGET_ROOTFS_PARTSIZE=2048
+          CONFIG_TARGET_ROOTFS_PARTSIZE=1024
 
           # ==========================================
           # 3. Wi-Fi 7 (BE14000) & 6GHz 频段满血驱动与 WPA3/MLO 套件
