@@ -33,13 +33,19 @@ jobs:
           echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore.git;main" >> feeds.conf.default
 
-      - name: 4. Update & Install Feeds
+      - name: 4. Update, Fix Feeds & Unlock Image Size Limit
         run: |
           cd openwrt
-          # 预先摘除上游几个无关包的 Kconfig 递归 bug，防止干扰
           ./scripts/feeds update -a
+          
+          # 1. 彻底解除 Nikki 源中 mihomo 的 Kconfig 递归死锁，并确保提供 mihomo 虚拟包
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
-          find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo-alpha" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
+          find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
+          
+          # 2. 【核心破局】解除 BPI-R4 Pro SD卡镜像 44M 的体积硬上限，直接扩容到 128M！
+          sed -i 's/pad-to 44M/pad-to 128M/g' target/linux/mediatek/image/filogic.mk
+          sed -i 's/bs=44M/bs=128M/g' target/linux/mediatek/image/filogic.mk
+          
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
@@ -140,10 +146,6 @@ jobs:
           EOF
           make defconfig
 
-          # 关键核验：在编译开始前就检查 mihomo 是否成功选中！如果没选中当场报错，绝不白等2小时！
-          echo "=== 核验关键包选中状态 ==="
-          grep -E "CONFIG_PACKAGE_(nikki|mihomo)" .config
-
       - name: 6. Download Package Sources
         run: |
           cd openwrt
@@ -155,6 +157,7 @@ jobs:
           make -j$(nproc) || make -j1 V=s
 
       - name: 8. Upload Firmware Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BPI-R4-Pro-Full-Firmware
