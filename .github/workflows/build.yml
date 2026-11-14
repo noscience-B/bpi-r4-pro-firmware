@@ -1,4 +1,4 @@
-name: Build BPI-R4 Pro 8x Firmware (Firewall4 Fix + Force Cache)
+name: Build BPI-R4 Pro 8x Firmware (Audited & Cached)
 
 on:
   workflow_dispatch:
@@ -15,11 +15,12 @@ jobs:
       - name: 1. Checkout repository
         uses: actions/checkout@v4
 
-      - name: 2. Free up disk space & Install complete dependencies
+      - name: 2. Free up 45GB+ disk space & Install complete dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
@@ -33,23 +34,25 @@ jobs:
           echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore.git;main" >> feeds.conf.default
 
-      - name: 4. Update, Fix Feeds & Unlock Image Size Limit
+      - name: 4. Update, Deduplicate Mihomo & Unlock Image Size Limit
         run: |
           cd openwrt
           ./scripts/feeds update -a
           
-          # 1. 解除 Nikki 源中 mihomo 的 Kconfig 递归死锁（精准排除，不再误伤主包）
+          # 1. 【防冲突根治】删除官方 packages 源中重名的 mihomo 及 nikki 源中的 alpha 包
+          #    彻底杜绝 Kconfig 递归死锁与 /usr/bin/mihomo 文件覆盖冲突 (Error 255)
+          rm -rf feeds/packages/net/mihomo 2>/dev/null || true
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
-          find feeds/ -name "Makefile" -exec grep -l "PACKAGE_mihomo-alpha" {} + | xargs sed -i 's/!PACKAGE_mihomo-alpha//g' 2>/dev/null || true
+          find feeds/nikki/ -name "Makefile" -exec sed -i 's/!PACKAGE_mihomo-alpha//g' {} + 2>/dev/null || true
           
-          # 2. 【核心修复】预先测试并锁定 firewall4 源码包下载，防止因上游 git 源网络抽风导致编译中断
-          sed -i 's/44m/256m/gI' target/linux/mediatek/image/filogic.mk
+          # 2. 【体积解封】将 44m/44M 扩容至 128m/128M，并阉割 check-size 的删文件指令
+          sed -i 's/44m/128m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
           
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
-      - name: 5. Generate Configuration (8x Exclusive + Pure Config)
+      - name: 5. Generate Configuration (8x Exclusive + 6GHz Ready)
         run: |
           cd openwrt
           cat << 'EOF' > .config
@@ -82,11 +85,9 @@ jobs:
           CONFIG_PACKAGE_wireless-regdb=y
 
           # ==========================================
-          # 4. 核心套件：Nikki + iStore商店 + 网易UU加速器
-          # （注：去掉多余的 mihomo-meta 同时勾选，防止与 mihomo 争抢二进制文件）
+          # 4. 核心套件：Nikki (自动拉取专属核心) + iStore商店 + 网易UU加速器
           # ==========================================
           CONFIG_PACKAGE_nikki=y
-          CONFIG_PACKAGE_mihomo=y
           CONFIG_PACKAGE_luci-app-nikki=y
           CONFIG_PACKAGE_luci-i18n-nikki-zh-cn=y
           CONFIG_PACKAGE_luci-app-store=y
@@ -149,49 +150,60 @@ jobs:
           EOF
           make defconfig
 
-      - name: 6. Restore Toolchain Cache
+      - name: 6. Restore Prebuilt Toolchain Cache
+        id: cache-toolchain
         uses: actions/cache/restore@v4
         with:
           path: |
             openwrt/staging_dir/host*
             openwrt/staging_dir/toolchain*
+            openwrt/staging_dir/target-*/stamp
             openwrt/build_dir/host*
             openwrt/build_dir/toolchain*
-          key: ${{ runner.os }}-r4pro8x-toolchain-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
+          key: ${{ runner.os }}-r4pro8x-tc-v1-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
           restore-keys: |
-            ${{ runner.os }}-r4pro8x-toolchain-
+            ${{ runner.os }}-r4pro8x-tc-v1-
 
-      - name: 7. Download Package Sources & Pre-verify Firewall4
+      - name: 7. Refresh Cache Timestamps (防止 git clone 时间戳倒挂触发重编)
+        if: steps.cache-toolchain.outputs.cache-hit != ''
+        run: |
+          cd openwrt
+          find staging_dir/ build_dir/ -name ".*" -exec touch -c {} + 2>/dev/null || true
+          find staging_dir/ -path "*/stamp/*" -exec touch -c {} + 2>/dev/null || true
+
+      - name: 8. Download Package Sources & Clean Corrupted Files
         run: |
           cd openwrt
           make download -j8
-          # 提前单独编译一次 firewall4，若下载失败自动重试，无需等2小时后再爆雷！
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
           make package/network/config/firewall4/download V=s
 
-      - name: 8. Compile Toolchain First & Save Cache Immediately
+      - name: 9. Build & Save Toolchain (仅首次未命中缓存时执行并立刻锁入云端)
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
           cd openwrt
-          # 先单独把最耗时的 tools 和 toolchain 跑完！
-          make tools/install -j$(nproc)
-          make toolchain/install -j$(nproc)
+          make tools/install -j$(nproc) || make tools/install -j1 V=s
+          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
 
-      - name: 9. Force Save Toolchain Cache (永不丢失工具链进度)
-        if: always()
+      - name: 10. Save Toolchain Cache Immediately
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             openwrt/staging_dir/host*
             openwrt/staging_dir/toolchain*
+            openwrt/staging_dir/target-*/stamp
             openwrt/build_dir/host*
             openwrt/build_dir/toolchain*
-          key: ${{ runner.os }}-r4pro8x-toolchain-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-r4pro8x-tc-v1-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
 
-      - name: 10. Compile Target & Packages (含单线程兜底排障)
+      - name: 11. Compile Target & Packages (三级阶梯防中断编译)
         run: |
           cd openwrt
-          make -j$(nproc) || make -j1 V=s
+          make -j$(nproc) || make -j$(nproc) || make -j1 V=s
 
-      - name: 11. Upload Firmware Artifacts
+      - name: 12. Upload Firmware Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
