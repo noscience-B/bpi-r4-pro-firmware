@@ -34,18 +34,21 @@ jobs:
           echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore.git;main" >> feeds.conf.default
 
-      - name: 4. Update, Deduplicate Mihomo & Unlock Image Size Limit
+      - name: 4. Update, Deduplicate Mihomo, Fix Firewall4 Patch & Unlock Size
         run: |
           cd openwrt
           ./scripts/feeds update -a
           
           # 1. 【防冲突根治】删除官方 packages 源中重名的 mihomo 及 nikki 源中的 alpha 包
-          #    彻底杜绝 Kconfig 递归死锁与 /usr/bin/mihomo 文件覆盖冲突 (Error 255)
           rm -rf feeds/packages/net/mihomo 2>/dev/null || true
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
           find feeds/nikki/ -name "Makefile" -exec sed -i 's/!PACKAGE_mihomo-alpha//g' {} + 2>/dev/null || true
           
-          # 2. 【体积解封】将 44m/44M 扩容至 128m/128M，并阉割 check-size 的删文件指令
+          # 2. 【精准狙击】移除因上游 firewall4 (2026.11.08) 更新导致 Hunk #1 失败的过时补丁
+          rm -f package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
+          sed -i '/fullconenat/d' package/network/config/firewall4/Makefile 2>/dev/null || true
+          
+          # 3. 【体积解封】将 44m/44M 扩容至 128m/128M，并阉割 check-size 的删文件指令
           sed -i 's/44m/128m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
           
@@ -139,11 +142,13 @@ jobs:
           CONFIG_PACKAGE_luci-i18n-samba4-zh-cn=y
 
           # ==========================================
-          # 8. 系统诊断与 eMMC 分区扩容工具
+          # 8. 系统诊断、万兆光模块监控与 eMMC 分区扩容工具
           # ==========================================
           CONFIG_PACKAGE_curl=y
           CONFIG_PACKAGE_htop=y
           CONFIG_PACKAGE_iperf3=y
+          CONFIG_PACKAGE_ethtool-full=y
+          CONFIG_PACKAGE_kmod-sfp=y
           CONFIG_PACKAGE_parted=y
           CONFIG_PACKAGE_resize2fs=y
           CONFIG_PACKAGE_f2fs-tools=y
@@ -177,7 +182,6 @@ jobs:
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
-          make package/network/config/firewall4/download V=s
 
       - name: 9. Build & Save Toolchain (仅首次未命中缓存时执行并立刻锁入云端)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
