@@ -48,9 +48,8 @@ jobs:
           rm -f package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
           sed -i '/fullconenat/d' package/network/config/firewall4/Makefile 2>/dev/null || true
           
-          # 3. 【外科手术级体积解封】仅扩容 IMAGE_SIZE 并恢复被误伤的 @44m 分区偏移，彻底根治 ptgen 报错！
-          sed -i 's/44m/128m/gI' target/linux/mediatek/image/filogic.mk
-          sed -i 's/@128m/@44m/gI' target/linux/mediatek/image/filogic.mk
+          # 3. 【体积解封】仅修改 IMAGE_SIZE 定义（绝不触碰 @44m 和 pad-to 44M 分区对齐参数）并放行 check-size
+          sed -i 's/IMAGE_SIZE := 44m/IMAGE_SIZE := 128m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
           
           ./scripts/feeds install -a
@@ -209,11 +208,12 @@ jobs:
           cd openwrt
           make -j$(nproc) || make -j$(nproc) || make -j1 V=s
 
-      - name: 12. Upload Firmware Artifacts
+      - - name: 12. Upload Firmware Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BPI-R4-Pro-8x-Full-Firmware
           path: |
             openwrt/bin/targets/mediatek/filogic/*bananapi_bpi-r4-pro*
+            openwrt/bin/targets/mediatek/filogic/sha256sums
             openwrt/.config
