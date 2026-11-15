@@ -38,20 +38,20 @@ jobs:
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          
+
           # 1. 【防冲突根治】删除官方 packages 源中重名的 mihomo 及 nikki 源中的 alpha 包
           rm -rf feeds/packages/net/mihomo 2>/dev/null || true
           rm -rf feeds/nikki/mihomo-alpha 2>/dev/null || true
           find feeds/nikki/ -name "Makefile" -exec sed -i 's/!PACKAGE_mihomo-alpha//g' {} + 2>/dev/null || true
-          
+
           # 2. 【精准狙击】移除因上游 firewall4 更新导致 Hunk #1 失败的过时补丁
           rm -f package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
           sed -i '/fullconenat/d' package/network/config/firewall4/Makefile 2>/dev/null || true
-          
+
           # 3. 【体积解封】仅修改 IMAGE_SIZE 定义（绝不触碰 @44m 和 pad-to 44M 分区对齐参数）并放行 check-size
           sed -i 's/IMAGE_SIZE := 44m/IMAGE_SIZE := 128m/gI' target/linux/mediatek/image/filogic.mk
           sed -i 's/rm -f $@/true/g' include/image-commands.mk
-          
+
           ./scripts/feeds install -a
           ./scripts/feeds install -d y -p istore luci-app-store
 
@@ -170,7 +170,7 @@ jobs:
             ${{ runner.os }}-r4pro8x-tc-v2-
             ${{ runner.os }}-r4pro8x-tc-v1-
 
-      - name: 7. Refresh Cache Timestamps (对齐 host/toolchain/target 全部印章时间戳)
+      - name: 7. Refresh Cache Timestamps
         if: steps.cache-toolchain.outputs.cache-hit != ''
         run: |
           cd openwrt
@@ -184,7 +184,7 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: 9. Build & Save Toolchain (支持 v1 缓存平滑升级至 v2)
+      - name: 9. Build & Save Toolchain
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
           cd openwrt
@@ -203,12 +203,12 @@ jobs:
             openwrt/build_dir/toolchain*
           key: ${{ runner.os }}-r4pro8x-tc-v2-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**') }}
 
-      - name: 11. Compile Target & Packages (三级阶梯防中断编译)
+      - name: 11. Compile Target & Packages
         run: |
           cd openwrt
           make -j$(nproc) || make -j$(nproc) || make -j1 V=s
 
-      - - name: 12. Upload Firmware Artifacts
+      - name: 12. Upload Firmware Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
