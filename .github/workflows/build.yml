@@ -92,8 +92,11 @@ jobs:
           # ==========================================
           CONFIG_PACKAGE_nikki=y
           CONFIG_PACKAGE_luci-app-nikki=y
-          CONFIG_PACKAGE_luci-i18n-nikki-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-nikki-zh_Hans=y
           CONFIG_PACKAGE_luci-app-store=y
+          CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_luci-lib-taskd=y
+          CONFIG_PACKAGE_luci-lib-xterm=y
           CONFIG_PACKAGE_uugamebooster=y
           CONFIG_PACKAGE_luci-app-uugamebooster=y
           CONFIG_PACKAGE_luci-i18n-uugamebooster-zh-cn=y
@@ -216,4 +219,5 @@ jobs:
           path: |
             openwrt/bin/targets/mediatek/filogic/*bananapi_bpi-r4-pro*
             openwrt/bin/targets/mediatek/filogic/sha256sums
+            openwrt/bin/packages/**
             openwrt/.config
